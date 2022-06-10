@@ -137,7 +137,7 @@ EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 	current_roles = current_lobby_members.map(member => member.get("lane_selection_flags") as LaneSelectionFlags_t)
 	needs_accept = true
 	panel_shown = true
-	accept_deadline = hrtime() + 11000
+	accept_deadline = hrtime() + 5000
 	current_lobby = obj
 	current_lobby_members.forEach(member => {
 		current_names.push(TransformName(member.get("name") as string))
