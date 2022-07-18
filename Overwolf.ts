@@ -78,7 +78,7 @@ let current_lobby_members: RecursiveMap[]
 let send_ping = false,
 	panel_shown = false
 const RootNode = Menu.AddEntry("Overwolf", "github.com/octarine-public/wrapper/scripts_files/menu/icons/info.svg")
-const bind = RootNode.AddKeybind("Toggle", "Tilde")
+const bind = RootNode.AddKeybind("Key", "Tilde")
 bind.OnPressed(() => {
 	if (current_players_cache.size !== 0)
 		panel_shown = !panel_shown
@@ -862,6 +862,7 @@ InputEventSDK.on("MouseKeyDown", mask => {
 })
 
 Menu.Localization.AddLocalizationUnit("russian", new Map([
+	["Key", "Клавиша"],
 	["Overwolf", "Овервульф"],
 	["Dodge Games By Default", "Доджить игры по умолчанию"],
 ]))
