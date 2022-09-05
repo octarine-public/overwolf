@@ -1,5 +1,5 @@
-import { PathX } from "immortal-core/Imports"
-import { ArrayExtensions, BitsExtensions, Color, DOTA_GameMode, Events, EventsSDK, Input, InputEventSDK, LaneSelectionFlags_t, Menu, Rectangle, RendererSDK, SOType, UnitData, Vector2, VMouseKeys } from "./wrapper/Imports"
+import { PathX } from "github.com/octarine-private/immortal-core/Imports"
+import { ArrayExtensions, BitsExtensions, Color, DOTA_GameMode, Events, EventsSDK, Input, InputEventSDK, LaneSelectionFlags_t, Menu, Rectangle, RendererSDK, SOType, UnitData, Vector2, VMouseKeys } from "github.com/octarine-public/wrapper/wrapper/Imports"
 
 interface MatchData {
 	assists: number
@@ -778,7 +778,7 @@ EventsSDK.on("Draw", async () => {
 			const sorted_heroes = loaded_all_heroes
 				? ArrayExtensions.orderBy(
 					[...data[1].entries()].filter(([, hero_data]) => hero_data!.last_match !== undefined),
-					([, hero_data]) => -GetActualTotalRecord(hero_data!).wins,
+					([, hero_data]) => -GetActualTotalRecord(hero_data).wins,
 				).slice(0, heroes_per_section)
 				: []
 
@@ -790,7 +790,7 @@ EventsSDK.on("Draw", async () => {
 					-1,
 					hero_image_size,
 				)
-				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data!)
+				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data)
 				current_pos.AddScalarX(hero_image_size.x + 2)
 			}
 
@@ -807,7 +807,7 @@ EventsSDK.on("Draw", async () => {
 			const sorted_heroes = loaded_all_heroes
 				? ArrayExtensions.orderBy(
 					[...data[1].entries()].filter(([, hero_data]) => hero_data!.last_match !== undefined),
-					([, hero_data]) => -hero_data!.last_match!.timestamp,
+					([, hero_data]) => -hero_data.last_match.timestamp,
 				).slice(0, heroes_per_section)
 				: []
 
@@ -819,7 +819,7 @@ EventsSDK.on("Draw", async () => {
 					-1,
 					hero_image_size,
 				)
-				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data!)
+				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data)
 				current_pos.AddScalarX(hero_image_size.x + 3)
 			}
 
