@@ -778,7 +778,7 @@ EventsSDK.on("Draw", async () => {
 			const sorted_heroes = loaded_all_heroes
 				? ArrayExtensions.orderBy(
 					[...data[1].entries()].filter(([, hero_data]) => hero_data!.last_match !== undefined),
-					([, hero_data]) => -GetActualTotalRecord(hero_data).wins,
+					([, hero_data]) => -GetActualTotalRecord(hero_data!).wins,
 				).slice(0, heroes_per_section)
 				: []
 
@@ -790,7 +790,7 @@ EventsSDK.on("Draw", async () => {
 					-1,
 					hero_image_size,
 				)
-				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data)
+				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data!)
 				current_pos.AddScalarX(hero_image_size.x + 2)
 			}
 
@@ -807,7 +807,7 @@ EventsSDK.on("Draw", async () => {
 			const sorted_heroes = loaded_all_heroes
 				? ArrayExtensions.orderBy(
 					[...data[1].entries()].filter(([, hero_data]) => hero_data!.last_match !== undefined),
-					([, hero_data]) => -hero_data.last_match.timestamp,
+					([, hero_data]) => -(hero_data?.last_match?.timestamp ?? 0),
 				).slice(0, heroes_per_section)
 				: []
 
@@ -819,7 +819,7 @@ EventsSDK.on("Draw", async () => {
 					-1,
 					hero_image_size,
 				)
-				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data)
+				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data!)
 				current_pos.AddScalarX(hero_image_size.x + 3)
 			}
 
