@@ -1,4 +1,4 @@
-import { Menu, Utils } from "github.com/octarine-public/wrapper/wrapper/Imports"
+import { Menu, Utils } from "github.com/octarine-public/wrapper/index"
 
 const path = "github.com/octarine-public/overwolf/scripts_files"
 const Load = (name: string) => {

@@ -6,11 +6,11 @@
 		{
 			"label": "Watch",
 			"type": "npm",
-			"script": "watch",
+			"script": "check-types-watch",
 			"isBackground": true,
 			"runOptions": {
 				"runOn": "folderOpen"
 			}
-		},
+		}
 	]
 }

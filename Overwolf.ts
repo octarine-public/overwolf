@@ -1,5 +1,5 @@
-import { PathX } from "github.com/octarine-private/immortal-core/Imports"
-import { ArrayExtensions, BitsExtensions, Color, DOTA_GameMode, Events, EventsSDK, Input, InputEventSDK, LaneSelectionFlags_t, Menu, Rectangle, RendererSDK, SOType, UnitData, Vector2, VMouseKeys } from "github.com/octarine-public/wrapper/wrapper/Imports"
+import { PathX } from "github.com/octarine-private/immortal-core/index"
+import { ArrayExtensions, BitsExtensions, Color, DOTA_GameMode, Events, EventsSDK, Input, InputEventSDK, LaneSelectionFlags_t, Menu, Rectangle, RendererSDK, SOType, UnitData, Vector2, VMouseKeys } from "github.com/octarine-public/wrapper/index"
 
 interface MatchData {
 	assists: number
