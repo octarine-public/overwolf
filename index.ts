@@ -49,7 +49,7 @@ interface PlayerData {
 }
 
 const current_players_cache = new Map<bigint, [Nullable<UserData>, Map<string, Nullable<HeroData>>]>()
-async function requestPlayerDataIfEnabled(steamid64: bigint): Promise<void> {
+ function requestPlayerDataIfEnabled(steamid64: bigint): Promise<void> {
 	if (!state.value)
 		return
 	let ar = current_players_cache.get(steamid64)
@@ -58,7 +58,7 @@ async function requestPlayerDataIfEnabled(steamid64: bigint): Promise<void> {
 		current_players_cache.set(steamid64, ar)
 	} else if (ar[1].size !== 0)
 		return
-	const unit_storage = await UnitData.global_storage,
+	const unit_storage =  UnitData.global_storage,
 		player_id = Number(steamid64 - 76561197960265728n)
 	for (const [unit_name, unit_data] of unit_storage) {
 		if (unit_data.HeroID === 0)
@@ -523,7 +523,7 @@ const party_colors: Color[] = [
 	new Color(214, 132, 17),
 ]
 const party_line_size = new Vector2(3, 1)
-EventsSDK.on("Draw", async () => {
+EventsSDK.on("Draw",  () => {
 	if (send_ping && accept_deadline < hrtime()) {
 		// if (dodge_games_by_default.value)
 		// 	DeclineGame()
