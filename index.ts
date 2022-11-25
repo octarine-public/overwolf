@@ -1,110 +1,87 @@
-import { PathX } from "github.com/octarine-private/immortal-core/index"
-import { ArrayExtensions, BitsExtensions, Color, DOTA_GameMode, Events, EventsSDK, Input, InputEventSDK, LaneSelectionFlags_t, Menu, Rectangle, RendererSDK, SOType, UnitData, Vector2, VMouseKeys } from "github.com/octarine-public/wrapper/index"
 import "./Translate"
 
-interface MatchData {
-	assists: number
-	deaths: number
-	duration: number
-	hero_id: number
-	kills: number
-	match_id: number
-	timestamp: number
-	win: boolean
-}
+import { PathX } from "github.com/octarine-private/immortal-core/index"
+import {
+	ArrayExtensions,
+	BitsExtensions,
+	Color,
+	DOTAGameMode,
+	Events,
+	EventsSDK,
+	Input,
+	InputEventSDK,
+	LaneSelectionFlags,
+	Menu,
+	Rectangle,
+	RendererSDK,
+	SOType,
+	UnitData,
+	Vector2,
+	VMouseKeys,
+} from "github.com/octarine-public/wrapper/index"
 
-interface OutcomesData {
-	match_count: number
-	outcomes: number
-}
-
-interface MatchesData {
-	wins: number
-	losses: number
-}
-
-interface UserData {
-	first_match_timestamp: Nullable<number>
-	last_match: Nullable<MatchData>
-	plus_prediction_streak: Nullable<number>
-	prediction_streak: Nullable<number>
-	recent_commends: Nullable<{
-		commends: number
-		match_count: number,
-	}>
-	recent_mvps: OutcomesData
-	recent_outcomes: OutcomesData
-	total_record: MatchesData
-}
-
-interface HeroData {
-	last_match: Nullable<MatchData>
-	recent_outcomes: OutcomesData
-	total_record: Nullable<MatchesData>
-}
-
-interface PlayerData {
-	user_data: UserData
-	hero_data: HeroData
-}
-
-const current_players_cache = new Map<bigint, [Nullable<UserData>, Map<string, Nullable<HeroData>>]>()
+const currentPlayersCache = new Map<
+	bigint,
+	[Nullable<UserData>, Map<string, Nullable<HeroData>>]
+>()
+const activePromises: Promise<void>[] = []
 function requestPlayerDataIfEnabled(steamid64: bigint): void {
-	if (!state.value)
-		return
-	let ar = current_players_cache.get(steamid64)
+	if (!state.value) return
+	let ar = currentPlayersCache.get(steamid64)
 	if (ar === undefined) {
 		ar = [undefined, new Map()]
-		current_players_cache.set(steamid64, ar)
-	} else if (ar[1].size !== 0)
-		return
-	const unit_storage = UnitData.global_storage,
-		player_id = Number(steamid64 - 76561197960265728n)
-	for (const [unit_name, unit_data] of unit_storage) {
-		if (unit_data.HeroID === 0)
-			continue
-		ar[1].set(unit_name, undefined)
-		requestPlayerData(player_id, unit_data.HeroID).then(json => {
+		currentPlayersCache.set(steamid64, ar)
+	} else if (ar[1].size !== 0) return
+	const playerID = Number(steamid64 - 76561197960265728n)
+	for (const [unitName, unitData] of UnitData.globalStorage) {
+		if (unitData.HeroID === 0) continue
+		ar[1].set(unitName, undefined)
+		const prom = requestPlayerData(playerID, unitData.HeroID).then(json => {
 			const data = JSON.parse(json) as PlayerData
 			ar![0] = data.user_data
-			ar![1].set(unit_name, data.hero_data)
+			ar![1].set(unitName, data.hero_data)
+			ArrayExtensions.arrayRemove(activePromises, prom)
 		})
+		activePromises.push(prom)
 	}
 }
 
-let current_lobby: Nullable<RecursiveMap>
-let current_names: string[] = []
-let current_roles: Nullable<LaneSelectionFlags_t>[] = []
-let current_lobby_members: RecursiveMap[]
-let send_ping = false,
-	panel_shown = false
-const RootNode = Menu.AddEntry("Overwolf", "github.com/octarine-public/wrapper/scripts_files/menu/icons/info.svg")
+let currentLobby: Nullable<RecursiveMap>
+let currentNames: string[] = []
+let currentRoles: Nullable<LaneSelectionFlags>[] = []
+let currentLobbyMembers: RecursiveMap[]
+let sendPing = false,
+	panelShown = false
+const RootNode = Menu.AddEntry(
+	"Overwolf",
+	"github.com/octarine-public/wrapper/scripts_files/menu/icons/info.svg"
+)
 const bind = RootNode.AddKeybind("Key", "Tilde")
 bind.OnPressed(() => {
-	if (current_players_cache.size !== 0)
-		panel_shown = !panel_shown
+	if (currentPlayersCache.size !== 0) panelShown = !panelShown
 })
-bind.activates_in_menu = true
+bind.ActivatesInMenu = true
 const state = RootNode.AddToggle("State", true)
 // const dodge_games_by_default = RootNode.AddToggle("Dodge Games By Default", false)
-let needs_accept = false
-let accept_deadline = 0
+let needsAccept = false
+let acceptDeadline = 0
 // let game_dodged = false
 // function DeclineGame(): void {
-// 	needs_accept = false
+// 	needsAccept = false
 // 	send_ping = false
 // 	game_dodged = true
 // }
 function AcceptGame(): void {
 	SendGCPingResponse()
-	needs_accept = false
-	send_ping = false
+	needsAccept = false
+	sendPing = false
 }
 // let last_party: Nullable<CSODOTAParty>
-let self_account_id: Nullable<bigint>
+let selfAccountID: Nullable<bigint>
 EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 	if (id === SOType.GameAccountClient)
-		self_account_id = 76561197960265728n + BigInt(obj.get("account_id") as number)
+		selfAccountID =
+			76561197960265728n + BigInt(obj.get("account_id") as number)
 	// if (id === 2003) {
 	// 	const party = obj as CSODOTAParty
 	// 	if (
@@ -117,38 +94,40 @@ EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 	// 	}
 	// 	last_party = reason !== 2 ? party : undefined
 	// }
-	if (id !== SOType.Lobby)
-		return
+	if (id !== SOType.Lobby) return
 	if (reason === 2) {
-		current_lobby = undefined
-		current_players_cache.clear()
-		current_lobby_members = []
-		send_ping = false
-		panel_shown = false
-		current_names = []
-		current_roles = []
-		needs_accept = false
+		currentLobby = undefined
+		currentPlayersCache.clear()
+		currentLobbyMembers = []
+		sendPing = false
+		panelShown = false
+		currentNames = []
+		currentRoles = []
+		needsAccept = false
 	}
-	if (reason !== 0)
-		return
-	current_lobby_members = (obj.get("all_members") as RecursiveMap[])
-		.filter(member => member.has("id") && (member.get("team") === 0 || member.get("team") === 1))
-	if (current_lobby_members.length > 10)
-		return
-	current_roles = current_lobby_members.map(member => member.get("lane_selection_flags") as LaneSelectionFlags_t)
-	needs_accept = true
-	panel_shown = true
-	accept_deadline = hrtime() + 5000
-	current_lobby = obj
-	current_lobby_members.forEach(member => {
-		current_names.push(TransformName(member.get("name") as string))
+	if (reason !== 0) return
+	currentLobbyMembers = (obj.get("all_members") as RecursiveMap[]).filter(
+		member =>
+			member.has("id") &&
+			(member.get("team") === 0 || member.get("team") === 1)
+	)
+	if (currentLobbyMembers.length > 10) return
+	currentRoles = currentLobbyMembers.map(
+		member => member.get("lane_selection_flags") as LaneSelectionFlags
+	)
+	needsAccept = true
+	panelShown = true
+	acceptDeadline = hrtime() + 5000
+	currentLobby = obj
+	for (const member of currentLobbyMembers) {
+		currentNames.push(TransformName(member.get("name") as string))
 		requestPlayerDataIfEnabled(member.get("id") as bigint)
-	})
+	}
 })
 
 Events.on("GCPingResponse", () => {
-	if (state.value && needs_accept) {
-		send_ping = true
+	if (state.value && needsAccept) {
+		sendPing = true
 		return false
 	}
 	return true
@@ -156,198 +135,252 @@ Events.on("GCPingResponse", () => {
 
 interface GUIBaseData {
 	rect: Rectangle
-	content_rect: Rectangle
-	actual_content_rect: Rectangle
+	contentRect: Rectangle
+	actualContentRect: Rectangle
 }
 
-const line_offset = 2
-const line_height = 2
-const line_color = new Color(28, 40, 60)
-const background_color = new Color(12, 21, 38)
-const border_color = new Color(92, 124, 176)
-const player_separator_offset = 2
-const player_separator_height = 2
-const player_separator_color = new Color(28, 40, 60)
-const player_height = 48
-const content_offset = new Vector2(7, 4)
-const close_button_size = new Vector2(24, 24)
-const close_button_color = new Color(128, 0, 0)
-const close_icon_button_color = new Color(236, 236, 236)
-// close_button_size = biggest height in header, os we use it here
-const actual_content_offset = new Vector2(0, close_button_size.x + line_offset * 2 + line_height)
-const horizontal_separator_size = new Vector2(1, player_height + player_separator_offset * 2)
-const role_size = new Vector2(25, 25)
-const rank_size = new Vector2(player_height, player_height)
-const separator_name_offset = new Vector2(160 + rank_size.x + role_size.x, -player_separator_offset)
-const separator_total_matches_offset = separator_name_offset.Add(new Vector2(50, 0))
-const separator_last_info_offset = separator_total_matches_offset.Add(new Vector2(50, 0))
-const separator_last_commends_offset = separator_last_info_offset.Add(new Vector2(75, 0))
-const heroes_per_section = 4
-const hero_image_size = new Vector2(74, player_height + 1)
-const separator_most_successful_heroes_offset = separator_last_commends_offset.Add(new Vector2((hero_image_size.x + 2) * heroes_per_section + 7, 0))
-const separator_last_picked_heroes_offset = separator_most_successful_heroes_offset.Add(new Vector2((hero_image_size.x + 2) * heroes_per_section + 7, 0))
+const lineOffset = 2
+const lineHeight = 2
+const lineColor = new Color(28, 40, 60)
+const backgroundColor = new Color(12, 21, 38)
+const borderColor = new Color(92, 124, 176)
+const playerSeparatorOffset = 2
+const playerSeparatorHeight = 2
+const playerSeparatorColor = new Color(28, 40, 60)
+const playerHeight = 48
+const contentOffset = new Vector2(7, 4)
+const closeButtonSize = new Vector2(24, 24)
+const closeButtonColor = new Color(128, 0, 0)
+const closeIconButtonColor = new Color(236, 236, 236)
+// closeButtonSize = biggest height in header, os we use it here
+const actualContentOffset = new Vector2(
+	0,
+	closeButtonSize.x + lineOffset * 2 + lineHeight
+)
+const horizontalSeparatorSize = new Vector2(
+	1,
+	playerHeight + playerSeparatorOffset * 2
+)
+const roleSize = new Vector2(25, 25)
+const rankSize = new Vector2(playerHeight, playerHeight)
+const separatorNameOffset = new Vector2(
+	160 + rankSize.x + roleSize.x,
+	-playerSeparatorOffset
+)
+const separatorTotalMatchesOffset = separatorNameOffset.Add(new Vector2(50, 0))
+const separatorLastInfoOffset = separatorTotalMatchesOffset.Add(
+	new Vector2(50, 0)
+)
+const separatorLastCommendsOffset = separatorLastInfoOffset.Add(
+	new Vector2(75, 0)
+)
+const heroesPerSection = 4
+const heroImageSize = new Vector2(74, playerHeight + 1)
+const separatorMostSuccessfulHeroesOffset = separatorLastCommendsOffset.Add(
+	new Vector2((heroImageSize.x + 2) * heroesPerSection + 7, 0)
+)
+const separatorLastPickedHeroesOffset = separatorMostSuccessfulHeroesOffset.Add(
+	new Vector2((heroImageSize.x + 2) * heroesPerSection + 7, 0)
+)
 function GetGUIBaseData(): GUIBaseData {
-	const window_size = RendererSDK.WindowSize
+	const windowSize = RendererSDK.WindowSize
 	const size = new Vector2(
-		content_offset.x * 2 + actual_content_offset.x * 2 + separator_last_picked_heroes_offset.x, // separator_last_picked_heroes_offset = last column
-		content_offset.y * 2 + actual_content_offset.y + (
-			player_height
-			+ player_separator_offset * 2
-			+ player_separator_height
-		) * (10 + 1), // 1 = separator between radiant and dire
+		contentOffset.x * 2 +
+			actualContentOffset.x * 2 +
+			separatorLastPickedHeroesOffset.x, // separatorLastPickedHeroesOffset = last column
+		contentOffset.y * 2 +
+			actualContentOffset.y +
+			(playerHeight + playerSeparatorOffset * 2 + playerSeparatorHeight) *
+				(10 + 1) // 1 = separator between radiant and dire
 	)
-	const offset = window_size.Subtract(size).DivideScalarForThis(2)
+	const offset = windowSize.Subtract(size).DivideScalarForThis(2)
 	const rect = new Rectangle(offset, offset.Add(size))
-	const content_rect = new Rectangle(offset.Add(content_offset), offset.Add(size).Subtract(content_offset))
-	const actual_content_rect = new Rectangle(content_rect.pos1.Add(actual_content_offset), content_rect.pos2)
+	const contentRect = new Rectangle(
+		offset.Add(contentOffset),
+		offset.Add(size).Subtract(contentOffset)
+	)
+	const actualContentRect = new Rectangle(
+		contentRect.pos1.Add(actualContentOffset),
+		contentRect.pos2
+	)
 
 	return {
 		rect,
-		content_rect,
-		actual_content_rect,
+		contentRect,
+		actualContentRect,
 	}
 }
 
-function GetGUICloseButton(base_data: GUIBaseData): Rectangle {
+function GetGUICloseButton(baseData: GUIBaseData): Rectangle {
 	const pos = new Vector2(
-		base_data.content_rect.pos2.x - close_button_size.x,
-		base_data.content_rect.pos1.y,
+		baseData.contentRect.pos2.x - closeButtonSize.x,
+		baseData.contentRect.pos1.y
 	)
-	return new Rectangle(pos, pos.Add(close_button_size))
+	return new Rectangle(pos, pos.Add(closeButtonSize))
 }
-const accept_button_color = Color.Green
-function GetGUIAcceptButton(base_data: GUIBaseData): Rectangle {
-	const accept_text_size = Vector2.FromVector3(RendererSDK.GetTextSize("ACCEPT"))
-	const accept_button_size = accept_text_size.Clone().AddScalarX(8)
-	const decline_text_size = Vector2.FromVector3(RendererSDK.GetTextSize("DODGE"))
-	const decline_button_size = decline_text_size.Clone().AddScalarX(8)
+const acceptButtonColor = Color.Green
+function GetGUIAcceptButton(baseData: GUIBaseData): Rectangle {
+	const acceptTextSize = Vector2.FromVector3(
+		RendererSDK.GetTextSize("ACCEPT")
+	)
+	const acceptButtonSize = acceptTextSize.Clone().AddScalarX(8)
+	const declineTextSize = Vector2.FromVector3(
+		RendererSDK.GetTextSize("DODGE")
+	)
+	const declineButtonSize = declineTextSize.Clone().AddScalarX(8)
 	const pos = new Vector2(
-		base_data.content_rect.pos2.x - close_button_size.x - accept_button_size.x - 5 - decline_button_size.x - 5 - 250,
-		base_data.content_rect.pos1.y,
+		baseData.contentRect.pos2.x -
+			closeButtonSize.x -
+			acceptButtonSize.x -
+			5 -
+			declineButtonSize.x -
+			5 -
+			250,
+		baseData.contentRect.pos1.y
 	)
-	accept_button_size.y = (base_data.actual_content_rect.pos1.y - base_data.content_rect.pos1.y) - line_height - line_offset * 2
-	return new Rectangle(pos, pos.Add(accept_button_size))
+	acceptButtonSize.y =
+		baseData.actualContentRect.pos1.y -
+		baseData.contentRect.pos1.y -
+		lineHeight -
+		lineOffset * 2
+	return new Rectangle(pos, pos.Add(acceptButtonSize))
 }
-// const decline_button_color = Color.Red
-// function GetGUIDeclineButton(base_data: GUIBaseData): Rectangle {
-// 	const decline_text_size = Vector2.FromVector3(RendererSDK.GetTextSize("DODGE"))
-// 	const decline_button_size = decline_text_size.Clone().AddScalarX(8)
+// const declineButtonColor = Color.Red
+// function GetGUIDeclineButton(baseData: GUIBaseData): Rectangle {
+// 	const declineTextSize = Vector2.FromVector3(RendererSDK.GetTextSize("DODGE"))
+// 	const declineButtonSize = declineTextSize.Clone().AddScalarX(8)
 // 	const pos = new Vector2(
-// 		base_data.content_rect.pos2.x - close_button_size.x - accept_button_size.x - 5 - 250,
-// 		base_data.content_rect.pos1.y,
+// 		baseData.contentRect.pos2.x - closeButtonSize.x - acceptButtonSize.x - 5 - 250,
+// 		baseData.contentRect.pos1.y,
 // 	)
-// 	decline_button_size.y = (base_data.actual_content_rect.pos1.y - base_data.content_rect.pos1.y) - line_height - line_offset * 2
-// 	return new Rectangle(pos, pos.Add(decline_button_size))
+// 	declineButtonSize.y = (baseData.actual_contentRect.pos1.y - baseData.contentRect.pos1.y) - lineHeight - lineOffset * 2
+// 	return new Rectangle(pos, pos.Add(declineButtonSize))
 // }
-function GetGUIDeadlineTextPos(base_data: GUIBaseData): Vector2 {
-	// return GetGUIDeclineButton(base_data).pos2.Clone().AddScalarX(6)
-	return GetGUIAcceptButton(base_data).pos2.Clone().AddScalarX(6)
+function GetGUIDeadlineTextPos(baseData: GUIBaseData): Vector2 {
+	// return GetGUIDeclineButton(baseData).pos2.Clone().AddScalarX(6)
+	return GetGUIAcceptButton(baseData).pos2.Clone().AddScalarX(6)
 }
-function GetDescriptionText(base_data: GUIBaseData): [Vector2, number] {
+function GetDescriptionText(baseData: GUIBaseData): [Vector2, number] {
 	const size = 18
-	return [new Vector2(
-		base_data.content_rect.pos1.x + 3,
-		base_data.content_rect.pos1.y + size,
-	), size]
+	return [
+		new Vector2(
+			baseData.contentRect.pos1.x + 3,
+			baseData.contentRect.pos1.y + size
+		),
+		size,
+	]
 }
 
 interface OutcomesInfo {
 	winstreak: number
 	losestreak: number
-	match_count: number
+	matchCount: number
 	winrate: number
 	wins: number
 	losses: number
 }
 function ExtractOutcomesInfo(data: OutcomesData): OutcomesInfo {
-	const match_count = data.match_count
+	const matchCount = data.match_count
 	let winstreak = 0,
 		losestreak = 0,
 		wins = 0,
 		losses = 0
-	for (let i = 0; i < match_count; i++) {
+	for (let i = 0; i < matchCount; i++) {
 		const win = BitsExtensions.HasBit(data.outcomes, i)
-		if (win && losses === 0)
-			winstreak++
-		if (!win && wins === 0)
-			losestreak++
-		if (win)
-			wins++
-		else
-			losses++
+		if (win && losses === 0) winstreak++
+		if (!win && wins === 0) losestreak++
+		if (win) wins++
+		else losses++
 	}
-	const winrate = match_count !== 0 ? (wins / match_count * 100) : 0
+	const winrate = matchCount !== 0 ? (wins / matchCount) * 100 : 0
 	return {
 		winstreak,
 		losestreak,
-		match_count,
+		matchCount,
 		winrate,
 		wins,
 		losses,
 	}
 }
 
-function GetPlayerRect(base_data: GUIBaseData, id: number): Rectangle {
-	const width = base_data.actual_content_rect.Size.x
-	const pos1 = base_data.actual_content_rect.pos1.Add(new Vector2(0, (player_height + player_separator_height + player_separator_offset * 2) * id))
-	return new Rectangle(pos1, pos1.Add(new Vector2(width, player_height)))
+function GetPlayerRect(baseData: GUIBaseData, id: number): Rectangle {
+	const width = baseData.actualContentRect.Size.x
+	const pos1 = baseData.actualContentRect.pos1.Add(
+		new Vector2(
+			0,
+			(playerHeight + playerSeparatorHeight + playerSeparatorOffset * 2) *
+				id
+		)
+	)
+	return new Rectangle(pos1, pos1.Add(new Vector2(width, playerHeight)))
 }
 
-function RenderRankTier(pos: Vector2, rank_tier: number): void {
-	const images_pos = pos.Clone().SubtractScalarY(rank_size.y)
-	const medal = rank_tier ? Math.floor(rank_tier / 10) : 0
-	RendererSDK.Image(`panorama/images/rank_tier_icons/rank${medal}_psd.vtex_c`, images_pos, -1, rank_size)
+function RenderRankTier(pos: Vector2, rankTier: number): void {
+	const imagesPos = pos.Clone().SubtractScalarY(rankSize.y)
+	const medal = rankTier ? Math.floor(rankTier / 10) : 0
+	RendererSDK.Image(
+		`panorama/images/rank_tier_icons/rank${medal}_psd.vtex_c`,
+		imagesPos,
+		-1,
+		rankSize
+	)
 
-	const tier = rank_tier % 10
-	if (medal === 0 || medal === 7 || tier === 0) // don't show pips at uncalibrateds and immortals, or if tier is somehow 0
+	const tier = rankTier % 10
+	if (medal === 0 || medal === 7 || tier === 0)
+		// don't show pips at uncalibrateds and immortals, or if tier is somehow 0
 		return
-	RendererSDK.Image(`panorama/images/rank_tier_icons/pip${tier}_psd.vtex_c`, images_pos, -1, rank_size)
+	RendererSDK.Image(
+		`panorama/images/rank_tier_icons/pip${tier}_psd.vtex_c`,
+		imagesPos,
+		-1,
+		rankSize
+	)
 }
 
-function GetGameModeName(game_mode: DOTA_GameMode): string {
-	switch (game_mode) {
-		case DOTA_GameMode.DOTA_GAMEMODE_ALL_DRAFT:
-		case DOTA_GameMode.DOTA_GAMEMODE_AP:
+function GetGameModeName(gameMode: DOTAGameMode): string {
+	switch (gameMode) {
+		case DOTAGameMode.DOTA_GAMEMODE_ALL_DRAFT:
+		case DOTAGameMode.DOTA_GAMEMODE_AP:
 			return "All Pick"
-		case DOTA_GameMode.DOTA_GAMEMODE_CM:
+		case DOTAGameMode.DOTA_GAMEMODE_CM:
 			return "Captains Mode"
-		case DOTA_GameMode.DOTA_GAMEMODE_RD:
+		case DOTAGameMode.DOTA_GAMEMODE_RD:
 			return "Random Draft"
-		case DOTA_GameMode.DOTA_GAMEMODE_SD:
+		case DOTAGameMode.DOTA_GAMEMODE_SD:
 			return "Single Draft"
-		case DOTA_GameMode.DOTA_GAMEMODE_AR:
+		case DOTAGameMode.DOTA_GAMEMODE_AR:
 			return "All Random"
-		case DOTA_GameMode.DOTA_GAMEMODE_HW:
+		case DOTAGameMode.DOTA_GAMEMODE_HW:
 			return "HW"
-		case DOTA_GameMode.DOTA_GAMEMODE_REVERSE_CM:
+		case DOTAGameMode.DOTA_GAMEMODE_REVERSE_CM:
 			return "Reverse Captains Mode"
-		case DOTA_GameMode.DOTA_GAMEMODE_XMAS:
+		case DOTAGameMode.DOTA_GAMEMODE_XMAS:
 			return "Frostivus"
-		case DOTA_GameMode.DOTA_GAMEMODE_MO:
+		case DOTAGameMode.DOTA_GAMEMODE_MO:
 			return "Mid Only"
-		case DOTA_GameMode.DOTA_GAMEMODE_LP:
+		case DOTAGameMode.DOTA_GAMEMODE_LP:
 			return "Low Priority"
-		case DOTA_GameMode.DOTA_GAMEMODE_POOL1:
+		case DOTAGameMode.DOTA_GAMEMODE_POOL1:
 			return "New Player Mode"
-		case DOTA_GameMode.DOTA_GAMEMODE_FH:
+		case DOTAGameMode.DOTA_GAMEMODE_FH:
 			return "FH"
-		case DOTA_GameMode.DOTA_GAMEMODE_CUSTOM:
+		case DOTAGameMode.DOTA_GAMEMODE_CUSTOM:
 			return "Custom Game"
-		case DOTA_GameMode.DOTA_GAMEMODE_CD:
+		case DOTAGameMode.DOTA_GAMEMODE_CD:
 			return "Captains Draft"
-		case DOTA_GameMode.DOTA_GAMEMODE_BD:
+		case DOTAGameMode.DOTA_GAMEMODE_BD:
 			return "BD"
-		case DOTA_GameMode.DOTA_GAMEMODE_ABILITY_DRAFT:
+		case DOTAGameMode.DOTA_GAMEMODE_ABILITY_DRAFT:
 			return "Ability Draft"
-		case DOTA_GameMode.DOTA_GAMEMODE_EVENT:
+		case DOTAGameMode.DOTA_GAMEMODE_EVENT:
 			return "Event"
-		case DOTA_GameMode.DOTA_GAMEMODE_ARDM:
+		case DOTAGameMode.DOTA_GAMEMODE_ARDM:
 			return "All Random Deathmatch"
-		case DOTA_GameMode.DOTA_GAMEMODE_1V1MID:
+		case DOTAGameMode.DOTA_GAMEMODE_1V1MID:
 			return "1v1 Solo Mid"
-		case DOTA_GameMode.DOTA_GAMEMODE_TURBO:
+		case DOTAGameMode.DOTA_GAMEMODE_TURBO:
 			return "Turbo"
-		case DOTA_GameMode.DOTA_GAMEMODE_MUTATION:
+		case DOTAGameMode.DOTA_GAMEMODE_MUTATION:
 			return "Mutation"
 		default:
 			return ""
@@ -369,148 +402,181 @@ function GetLobbyDescription(lobby: RecursiveMap): string {
 		default:
 			break
 	}
-	return description + GetGameModeName(
-		lobby.get("game_mode") as DOTA_GameMode
-		?? DOTA_GameMode.DOTA_GAMEMODE_AP,
+	return (
+		description +
+		GetGameModeName(
+			(lobby.get("game_mode") as DOTAGameMode) ??
+				DOTAGameMode.DOTA_GAMEMODE_AP
+		)
 	)
 }
 
 function TransformName(name: string): string {
-	if (name.length <= 13)
-		return name
+	if (name.length <= 13) return name
 	return name.slice(0, 12) + "…"
 }
 
 function GetWinRateColor(winrate: number): Color {
-	if (winrate <= 25)
-		return Color.Red
-	if (winrate > 75)
-		return Color.Green
-	const winrate_rgb = Math.max(Math.min((winrate * 2 - 25 - Math.abs(winrate - 50) + Math.abs(winrate - 45)) / 100 * 255, 255), 0)
-	return new Color(255 - winrate_rgb, winrate_rgb, 0)
+	if (winrate <= 25) return Color.Red
+	if (winrate > 75) return Color.Green
+	const winrateRGB = Math.max(
+		Math.min(
+			((winrate * 2 -
+				25 -
+				Math.abs(winrate - 50) +
+				Math.abs(winrate - 45)) /
+				100) *
+				255,
+			255
+		),
+		0
+	)
+	return new Color(255 - winrateRGB, winrateRGB, 0)
 }
 
 function GetStreakDescription(outcomes: OutcomesInfo): string {
-	if (outcomes.losestreak === 0)
-		return `W ${outcomes.winstreak}`
-	else
-		return `L ${outcomes.losestreak}`
+	if (outcomes.losestreak === 0) return `W ${outcomes.winstreak}`
+	return `L ${outcomes.losestreak}`
 }
 
 function GetStreakColor(outcomes: OutcomesInfo): Color {
 	if (outcomes.losestreak === 0) {
-		if (outcomes.winstreak === 0)
-			return Color.Gray
+		if (outcomes.winstreak === 0) return Color.Gray
 		return Color.Green
-	} else
-		return Color.Red
-}
-
-function GetActualTotalRecord(hero_data: HeroData): MatchesData {
-	const total_record = hero_data.total_record
-	const outcomes = ExtractOutcomesInfo(hero_data.recent_outcomes)
-	const outcomes_record: MatchesData = {
-		wins: outcomes.wins,
-		losses: outcomes.match_count - outcomes.wins,
 	}
-	if (total_record === undefined || (total_record.wins + total_record.losses < outcomes.match_count))
-		return outcomes_record
-	return total_record
+	return Color.Red
 }
 
-function RenderTotalMatches(pos: Vector2, total_winrate: number, total_matches: number, font_size = 18): void {
-	const total_matches_str = `${total_matches}`
-	const total_matches_size = RendererSDK.GetTextSize(total_matches_str, RendererSDK.DefaultFontName, font_size)
+function GetActualTotalRecord(heroData: HeroData): MatchesData {
+	const totalRecord = heroData.total_record
+	const outcomes = ExtractOutcomesInfo(heroData.recent_outcomes)
+	const outcomesRecord: MatchesData = {
+		wins: outcomes.wins,
+		losses: outcomes.matchCount - outcomes.wins,
+	}
+	if (
+		totalRecord === undefined ||
+		totalRecord.wins + totalRecord.losses < outcomes.matchCount
+	)
+		return outcomesRecord
+	return totalRecord
+}
+
+function RenderTotalMatches(
+	pos: Vector2,
+	totalWinrate: number,
+	totalMatches: number,
+	fontSize = 18
+): void {
+	const totalMatchesSrt = `${totalMatches}`
+	const totalMatchesSize = RendererSDK.GetTextSize(
+		totalMatchesSrt,
+		RendererSDK.DefaultFontName,
+		fontSize
+	)
 	RendererSDK.Text(
-		total_matches_str,
-		pos.Clone().SubtractScalarX(total_matches_size.x / 2).SubtractScalarY(total_matches_size.y),
+		totalMatchesSrt,
+		pos
+			.Clone()
+			.SubtractScalarX(totalMatchesSize.x / 2)
+			.SubtractScalarY(totalMatchesSize.y),
 		Color.White,
 		RendererSDK.DefaultFontName,
-		font_size,
+		fontSize
 	)
 
-	const total_winrate_str = `${Math.round(total_winrate)}%`
-	const total_winrate_size = RendererSDK.GetTextSize(total_winrate_str)
+	const totalWinrateSrt = `${Math.round(totalWinrate)}%`
+	const totalWinrateSize = RendererSDK.GetTextSize(totalWinrateSrt)
 	RendererSDK.Text(
-		total_winrate_str,
-		pos.Clone().SubtractScalarX(total_winrate_size.x / 2).AddScalarY(total_matches_size.y - total_winrate_size.y + 5),
-		total_matches !== 0 ? GetWinRateColor(total_winrate) : Color.Gray,
+		totalWinrateSrt,
+		pos
+			.Clone()
+			.SubtractScalarX(totalWinrateSize.x / 2)
+			.AddScalarY(totalMatchesSize.y - totalWinrateSize.y + 5),
+		totalMatches !== 0 ? GetWinRateColor(totalWinrate) : Color.Gray,
 		RendererSDK.DefaultFontName,
-		font_size,
+		fontSize
 	)
 }
 
-function RenderHeroStats(rect: Rectangle, hero_data: HeroData, font_size = 16): void {
-	const rect_size = rect.Size
-	const base_pos = rect.pos2.Subtract(rect_size.DivideScalar(2))
-	RendererSDK.FilledRect(rect.pos1, rect_size, Color.Black.SetA(128))
+function RenderHeroStats(
+	rect: Rectangle,
+	heroData: HeroData,
+	fontSize = 16
+): void {
+	const rectSize = rect.Size
+	const basePos = rect.pos2.Subtract(rectSize.DivideScalar(2))
+	RendererSDK.FilledRect(rect.pos1, rectSize, Color.Black.SetA(128))
 	{
-		const outcomes_info = ExtractOutcomesInfo(hero_data.recent_outcomes)
+		const outcomesInfo = ExtractOutcomesInfo(heroData.recent_outcomes)
 		RenderTotalMatches(
-			base_pos.Clone().AddScalarX(rect_size.x / 4),
-			outcomes_info.winrate,
-			outcomes_info.match_count,
-			font_size,
+			basePos.Clone().AddScalarX(rectSize.x / 4),
+			outcomesInfo.winrate,
+			outcomesInfo.matchCount,
+			fontSize
 		)
 	}
 	{
-		const total_record = GetActualTotalRecord(hero_data)
-		const match_count = total_record.wins + total_record.losses
-		const winrate = match_count !== 0 ? total_record.wins / match_count * 100 : 0
+		const totalRecord = GetActualTotalRecord(heroData)
+		const matchCount = totalRecord.wins + totalRecord.losses
+		const winrate =
+			matchCount !== 0 ? (totalRecord.wins / matchCount) * 100 : 0
 		RenderTotalMatches(
-			base_pos.Clone().SubtractScalarX(rect_size.x / 4),
+			basePos.Clone().SubtractScalarX(rectSize.x / 4),
 			winrate,
-			match_count,
-			font_size,
+			matchCount,
+			fontSize
 		)
 	}
 }
 
-const tooltip_border_size = new Vector2(1, 1),
-	tooltip_font = RendererSDK.DefaultFontName,
-	tooltip_font_size = 18
+const tooltipBorderSize = new Vector2(1, 1),
+	tooltipFont = RendererSDK.DefaultFontName,
+	tooltipFontSize = 18
 function ShowTooltip(rect: Rectangle, cursor: Vector2, tooltip: string): void {
-	if (!rect.Contains(cursor))
-		return
+	if (!rect.Contains(cursor)) return
 
 	const Addscalar = 5
 	const SizeImage = new Vector2(18, 18)
 
-	const tooltip_size = Vector2.FromVector3(RendererSDK.GetTextSize(tooltip, tooltip_font, tooltip_font_size))
+	const tooltipSize = Vector2.FromVector3(
+		RendererSDK.GetTextSize(tooltip, tooltipFont, tooltipFontSize)
+	)
 
-	const TotalSize = tooltip_size.Clone()
-		.AddForThis(tooltip_border_size)
-		.AddScalarX(SizeImage.x + (Addscalar * 2))
+	const TotalSize = tooltipSize
+		.Clone()
+		.AddForThis(tooltipBorderSize)
+		.AddScalarX(SizeImage.x + Addscalar * 2)
 		.AddScalarY(Addscalar)
 
 	const Position = rect.pos1.Clone().SubtractScalarY(TotalSize.y)
 
-	const window_size = RendererSDK.WindowSize
-	Position.x = Math.min(Position.x, window_size.x - TotalSize.x)
-	Position.y = Math.min(Position.y, window_size.y - TotalSize.y)
-	RendererSDK.FilledRect(Position, TotalSize, background_color)
-	RendererSDK.OutlinedRect(Position, TotalSize, 1, border_color)
+	const windowSize = RendererSDK.WindowSize
+	Position.x = Math.min(Position.x, windowSize.x - TotalSize.x)
+	Position.y = Math.min(Position.y, windowSize.y - TotalSize.y)
+	RendererSDK.FilledRect(Position, TotalSize, backgroundColor)
+	RendererSDK.OutlinedRect(Position, TotalSize, 1, borderColor)
 
 	RendererSDK.Image(
 		"panorama/images/status_icons/information_psd.vtex_c",
 		Position.Clone().AddScalarX(2),
 		-1,
 		SizeImage,
-		Color.RoyalBlue,
+		Color.RoyalBlue
 	)
 
 	RendererSDK.Text(
 		tooltip,
-		Position
-			.AddForThis(tooltip_border_size)
-			.AddScalarX(SizeImage.x + Addscalar),
+		Position.AddForThis(tooltipBorderSize).AddScalarX(
+			SizeImage.x + Addscalar
+		),
 		Color.White,
-		tooltip_font,
-		tooltip_font_size,
+		tooltipFont,
+		tooltipFontSize
 	)
 }
 
-const party_colors: Color[] = [
+const partyColors: Color[] = [
 	new Color(55, 117, 240),
 	new Color(129, 242, 188),
 	new Color(174, 13, 172),
@@ -522,337 +588,502 @@ const party_colors: Color[] = [
 	new Color(12, 197, 63),
 	new Color(214, 132, 17),
 ]
-const party_line_size = new Vector2(3, 1)
+const partyLineSize = new Vector2(3, 1)
 EventsSDK.on("Draw", () => {
-	if (send_ping && accept_deadline < hrtime()) {
+	if (sendPing && acceptDeadline < hrtime()) {
 		// if (dodge_games_by_default.value)
 		// 	DeclineGame()
 		// else
 		AcceptGame()
 	}
-	if (!state.value || current_lobby_members === undefined)
-		return
-	current_lobby_members.forEach((member, i) => requestPlayerDataIfEnabled(member.get("id") as bigint))
-	if (!panel_shown || current_players_cache.size === 0)
-		return
+	if (!state.value || currentLobbyMembers === undefined) return
+	for (const member of currentLobbyMembers)
+		requestPlayerDataIfEnabled(member.get("id") as bigint)
+	if (!panelShown || currentPlayersCache.size === 0) return
 
 	const cursor = Input.CursorOnScreen
-	const gui_base_data = GetGUIBaseData()
-	RendererSDK.FilledRect(gui_base_data.rect.pos1, gui_base_data.rect.Size, background_color)
-	RendererSDK.OutlinedRect(gui_base_data.rect.pos1, gui_base_data.rect.Size, 1, border_color)
+	const guiBaseData = GetGUIBaseData()
+	RendererSDK.FilledRect(
+		guiBaseData.rect.pos1,
+		guiBaseData.rect.Size,
+		backgroundColor
+	)
+	RendererSDK.OutlinedRect(
+		guiBaseData.rect.pos1,
+		guiBaseData.rect.Size,
+		1,
+		borderColor
+	)
 
-	const [gui_desc_text_pos, gui_desc_text_size] = GetDescriptionText(gui_base_data)
-	const desc_str = `Octarine | ${Menu.Localization.Localize("Overwolf")} | ${GetLobbyDescription(current_lobby!)}`
+	const [guiDescTextPos, guiDescTextSize] = GetDescriptionText(guiBaseData)
+	const descSrt = `Octarine | ${Menu.Localization.Localize(
+		"Overwolf"
+	)} | ${GetLobbyDescription(currentLobby!)}`
 	RendererSDK.Text(
-		desc_str,
-		gui_desc_text_pos.SubtractScalarY(RendererSDK.GetTextSize(desc_str, RendererSDK.DefaultFontName, gui_desc_text_size).y),
+		descSrt,
+		guiDescTextPos.SubtractScalarY(
+			RendererSDK.GetTextSize(
+				descSrt,
+				RendererSDK.DefaultFontName,
+				guiDescTextSize
+			).y
+		),
 		Color.White,
 		RendererSDK.DefaultFontName,
-		gui_desc_text_size,
+		guiDescTextSize
 	)
 
 	{
-		const gui_close_button = GetGUICloseButton(gui_base_data)
-		RendererSDK.FilledRect(gui_close_button.pos1, gui_close_button.Size, close_button_color)
-		RendererSDK.Image("panorama/images/control_icons/x_close_png.vtex_c", gui_close_button.pos1, -1, gui_close_button.Size, close_icon_button_color)
+		const guiCloseButton = GetGUICloseButton(guiBaseData)
+		RendererSDK.FilledRect(
+			guiCloseButton.pos1,
+			guiCloseButton.Size,
+			closeButtonColor
+		)
+		RendererSDK.Image(
+			"panorama/images/control_icons/x_close_png.vtex_c",
+			guiCloseButton.pos1,
+			-1,
+			guiCloseButton.Size,
+			closeIconButtonColor
+		)
 	}
 
-	if (send_ping) {
-		const accept_text_size = RendererSDK.GetTextSize("ACCEPT")
+	if (sendPing) {
+		const acceptTextSize = RendererSDK.GetTextSize("ACCEPT")
 
-		const gui_accept_button = GetGUIAcceptButton(gui_base_data)
-		RendererSDK.FilledRect(gui_accept_button.pos1, gui_accept_button.Size, accept_button_color)
-		RendererSDK.Text("ACCEPT", new Vector2(gui_accept_button.pos1.x + gui_accept_button.Width / 2 - accept_text_size.x / 2, gui_accept_button.pos2.y - accept_text_size.y))
+		const guiAcceptButton = GetGUIAcceptButton(guiBaseData)
+		RendererSDK.FilledRect(
+			guiAcceptButton.pos1,
+			guiAcceptButton.Size,
+			acceptButtonColor
+		)
+		RendererSDK.Text(
+			"ACCEPT",
+			new Vector2(
+				guiAcceptButton.pos1.x +
+					guiAcceptButton.Width / 2 -
+					acceptTextSize.x / 2,
+				guiAcceptButton.pos2.y - acceptTextSize.y
+			)
+		)
 
-		// const gui_decline_button = GetGUIDeclineButton(gui_base_data)
-		// RendererSDK.FilledRect(gui_decline_button.pos1, gui_decline_button.Size, decline_button_color)
-		// RendererSDK.Text("DODGE", new Vector2(gui_decline_button.pos1.x + decline_button_size.x / 2 - decline_text_size.x / 2, gui_decline_button.pos2.y - decline_button_size.y / 2))
+		// const gui_declineButton = GetGUIDeclineButton(guiBaseData)
+		// RendererSDK.FilledRect(gui_declineButton.pos1, gui_declineButton.Size, declineButtonColor)
+		// RendererSDK.Text("DODGE", new Vector2(gui_declineButton.pos1.x + declineButtonSize.x / 2 - declineTextSize.x / 2, gui_declineButton.pos2.y - declineButtonSize.y / 2))
 
-		const gui_deadline_text_pos = GetGUIDeadlineTextPos(gui_base_data)
-		const deadline_text = `${Math.round((accept_deadline - hrtime()) / 1000 * 10) / 10}s left`
-		const deadline_text_size = RendererSDK.GetTextSize(deadline_text)
-		RendererSDK.Text(deadline_text, gui_deadline_text_pos.AddScalarX(deadline_text_size.x / 2).SubtractScalarY(deadline_text_size.y))
+		const guiDeadlineTextPos = GetGUIDeadlineTextPos(guiBaseData)
+		const deadlineText = `${
+			Math.round(((acceptDeadline - hrtime()) / 1000) * 10) / 10
+		}s left`
+		const deadlineTextSize = RendererSDK.GetTextSize(deadlineText)
+		RendererSDK.Text(
+			deadlineText,
+			guiDeadlineTextPos
+				.AddScalarX(deadlineTextSize.x / 2)
+				.SubtractScalarY(deadlineTextSize.y)
+		)
 	}
 
 	RendererSDK.FilledRect(
-		gui_base_data.actual_content_rect.pos1.Subtract(new Vector2(0, line_height + line_offset)),
-		new Vector2(gui_base_data.actual_content_rect.Size.x, line_height),
-		line_color,
+		guiBaseData.actualContentRect.pos1.Subtract(
+			new Vector2(0, lineHeight + lineOffset)
+		),
+		new Vector2(guiBaseData.actualContentRect.Size.x, lineHeight),
+		lineColor
 	)
 
-	let latest_partyid = -1n
-	let current_party_id = 0
-	for (let i = 0, end = current_lobby_members.length; i < end; i++) {
-		const member = current_lobby_members[i]
+	let latestPartyID = -1n
+	let currentPartyID = 0
+	for (let i = 0, end = currentLobbyMembers.length; i < end; i++) {
+		const member = currentLobbyMembers[i]
 		if (i === 5) {
-			const rect_ = GetPlayerRect(gui_base_data, i)
+			const playerRect = GetPlayerRect(guiBaseData, i)
 			RendererSDK.FilledRect(
-				new Vector2(rect_.pos1.x, rect_.pos2.y + player_separator_offset),
-				new Vector2(rect_.Size.x, player_separator_height),
-				player_separator_color,
+				new Vector2(
+					playerRect.pos1.x,
+					playerRect.pos2.y + playerSeparatorOffset
+				),
+				new Vector2(playerRect.Size.x, playerSeparatorHeight),
+				playerSeparatorColor
 			)
 		}
-		const rect = GetPlayerRect(gui_base_data, i >= 5 ? i + 1 : i)
+		const rect = GetPlayerRect(guiBaseData, i >= 5 ? i + 1 : i)
 
-		if (latest_partyid === member.get("party_id")) {
-			const prev_i = i - 1
-			const prev_rect = GetPlayerRect(gui_base_data, prev_i >= 5 ? prev_i + 1 : prev_i)
-			const x = rect.pos1.x - party_line_size.x
-			const y1 = prev_rect.pos1.y + prev_rect.Size.y / 2
+		if (latestPartyID === member.get("party_id")) {
+			const prevI = i - 1
+			const prevRect = GetPlayerRect(
+				guiBaseData,
+				prevI >= 5 ? prevI + 1 : prevI
+			)
+			const x = rect.pos1.x - partyLineSize.x
+			const y1 = prevRect.pos1.y + prevRect.Size.y / 2
 			const y2 = rect.pos1.y + rect.Size.y / 2
-			const color = party_colors[current_party_id]
-			RendererSDK.FilledRect(new Vector2(x, y1), party_line_size, color)
-			RendererSDK.FilledRect(new Vector2(x, y2), party_line_size, color)
-			RendererSDK.FilledRect(new Vector2(x, y1), new Vector2(1, y2 - y1), color)
-		} else
-			current_party_id++
-		latest_partyid = member.get("party_id") as bigint
+			const color = partyColors[currentPartyID]
+			RendererSDK.FilledRect(new Vector2(x, y1), partyLineSize, color)
+			RendererSDK.FilledRect(new Vector2(x, y2), partyLineSize, color)
+			RendererSDK.FilledRect(
+				new Vector2(x, y1),
+				new Vector2(1, y2 - y1),
+				color
+			)
+		} else currentPartyID++
+		latestPartyID = member.get("party_id") as bigint
 
-		let current_pos = new Vector2(rect.pos1.x, rect.pos2.y)
+		let currentPos = new Vector2(rect.pos1.x, rect.pos2.y)
 		{
-			const rect_rank_and_name = new Rectangle(rect.pos1.Clone(), new Vector2(rect.pos1.x + separator_name_offset.x, rect.pos2.y))
+			const rectRankAndName = new Rectangle(
+				rect.pos1.Clone(),
+				new Vector2(rect.pos1.x + separatorNameOffset.x, rect.pos2.y)
+			)
 
-			const role = current_roles[i]
-			let role_path = ""
+			const role = currentRoles[i]
+			let rolePath = ""
 			switch (role) {
-				case LaneSelectionFlags_t.HARD_SUPPORT:
-					role_path = PathX.Images.hardsupport
+				case LaneSelectionFlags.HARD_SUPPORT:
+					rolePath = PathX.Images.hardsupport
 					break
-				case LaneSelectionFlags_t.MID_LANE:
-					role_path = PathX.Images.midlane
+				case LaneSelectionFlags.MID_LANE:
+					rolePath = PathX.Images.midlane
 					break
-				case LaneSelectionFlags_t.OFF_LANE:
-					role_path = PathX.Images.offlane
+				case LaneSelectionFlags.OFF_LANE:
+					rolePath = PathX.Images.offlane
 					break
-				case LaneSelectionFlags_t.SAFE_LANE:
-					role_path = PathX.Images.safelane
+				case LaneSelectionFlags.SAFE_LANE:
+					rolePath = PathX.Images.safelane
 					break
-				case LaneSelectionFlags_t.SOFT_SUPPORT:
-					role_path = PathX.Images.softsupport
+				case LaneSelectionFlags.SOFT_SUPPORT:
+					rolePath = PathX.Images.softsupport
 					break
 				default:
 					break
 			}
-			if (role_path !== "")
+			if (rolePath !== "")
 				RendererSDK.Image(
-					role_path,
-					current_pos.Clone()
+					rolePath,
+					currentPos
+						.Clone()
 						.SubtractScalarY(rect.Size.y)
-						.AddScalarY((rect.Size.y - role_size.y) / 2),
+						.AddScalarY((rect.Size.y - roleSize.y) / 2),
 					-1,
-					role_size,
+					roleSize
 				)
-			current_pos.AddScalarX(role_size.x)
+			currentPos.AddScalarX(roleSize.x)
 
-			RenderRankTier(current_pos, member.get("rank_tier") as number)
-			current_pos.AddScalarX(rank_size.x)
+			RenderRankTier(currentPos, member.get("rank_tier") as number)
+			currentPos.AddScalarX(rankSize.x)
 
-			const name = current_names[i]
+			const name = currentNames[i]
 			RendererSDK.Text(
 				name,
-				current_pos.Clone()
+				currentPos
+					.Clone()
 					.SubtractScalarY(rect.Size.y / 2)
 					.SubtractScalarY(RendererSDK.GetTextSize(name).y / 2),
-				member.get("id") === self_account_id
+				member.get("id") === selfAccountID
 					? Color.Green
 					: GetPlayerMuteFlags(member.get("id") as bigint) !== 0
-						? Color.Red
-						: Color.White,
+					? Color.Red
+					: Color.White
 			)
 
-			current_pos = rect.pos1.Add(separator_name_offset)
-			RendererSDK.FilledRect(current_pos, horizontal_separator_size, line_color)
-			current_pos.AddScalarX(horizontal_separator_size.x)
+			currentPos = rect.pos1.Add(separatorNameOffset)
+			RendererSDK.FilledRect(
+				currentPos,
+				horizontalSeparatorSize,
+				lineColor
+			)
+			currentPos.AddScalarX(horizontalSeparatorSize.x)
 
-			ShowTooltip(rect_rank_and_name, cursor, "Role, rank, name")
+			ShowTooltip(rectRankAndName, cursor, "Role, rank, name")
 		}
 
 		RendererSDK.FilledRect(
-			new Vector2(rect.pos1.x, rect.pos2.y + player_separator_offset),
-			new Vector2(rect.Size.x, player_separator_height),
-			player_separator_color,
+			new Vector2(rect.pos1.x, rect.pos2.y + playerSeparatorOffset),
+			new Vector2(rect.Size.x, playerSeparatorHeight),
+			playerSeparatorColor
 		)
 
-		const data = current_players_cache.get(member.get("id") as bigint)
-		if (data === undefined || data[0] === undefined)
-			continue
+		const data = currentPlayersCache.get(member.get("id") as bigint)
+		if (data === undefined || data[0] === undefined) continue
 
 		{
-			const rect_total_matches = new Rectangle(current_pos, new Vector2(rect.pos1.x + separator_total_matches_offset.x, rect.pos2.y))
-
-			const user_total_record = data[0].total_record
-			const total_matches = user_total_record.wins + user_total_record.losses
-			const total_winrate = total_matches !== 0 ? user_total_record.wins / total_matches * 100 : 0
-			const total_matches_str = `${total_matches}`
-			const total_matches_size = RendererSDK.GetTextSize(total_matches_str)
-			const total_matches_pos = rect_total_matches.pos2.Subtract(rect_total_matches.Size.DivideScalar(2))
-			RendererSDK.Text(
-				total_matches_str,
-				total_matches_pos.Clone().SubtractScalarX(total_matches_size.x / 2).SubtractScalarY(total_matches_size.y),
+			const rectTotalMatches = new Rectangle(
+				currentPos,
+				new Vector2(
+					rect.pos1.x + separatorTotalMatchesOffset.x,
+					rect.pos2.y
+				)
 			)
 
-			const total_winrate_str = `${Math.round(total_winrate)}%`
-			const total_winrate_size = RendererSDK.GetTextSize(total_winrate_str)
+			const userTotalRecord = data[0].total_record
+			const totalMatches = userTotalRecord.wins + userTotalRecord.losses
+			const totalWinrate =
+				totalMatches !== 0
+					? (userTotalRecord.wins / totalMatches) * 100
+					: 0
+			const totalMatchesSrt = `${totalMatches}`
+			const totalMatchesSize = RendererSDK.GetTextSize(totalMatchesSrt)
+			const totalMatchesPos = rectTotalMatches.pos2.Subtract(
+				rectTotalMatches.Size.DivideScalar(2)
+			)
 			RendererSDK.Text(
-				total_winrate_str,
-				total_matches_pos.Clone().SubtractScalarX(total_winrate_size.x / 2).AddScalarY(total_matches_size.y - total_winrate_size.y + 5),
-				total_matches !== 0 ? GetWinRateColor(total_winrate) : Color.Gray,
+				totalMatchesSrt,
+				totalMatchesPos
+					.Clone()
+					.SubtractScalarX(totalMatchesSize.x / 2)
+					.SubtractScalarY(totalMatchesSize.y)
 			)
 
-			current_pos = rect.pos1.Add(separator_total_matches_offset)
-			RendererSDK.FilledRect(current_pos, horizontal_separator_size, line_color)
-			current_pos.AddScalarX(horizontal_separator_size.x)
+			const totalWinrateSrt = `${Math.round(totalWinrate)}%`
+			const totalWinrateSize = RendererSDK.GetTextSize(totalWinrateSrt)
+			RendererSDK.Text(
+				totalWinrateSrt,
+				totalMatchesPos
+					.Clone()
+					.SubtractScalarX(totalWinrateSize.x / 2)
+					.AddScalarY(totalMatchesSize.y - totalWinrateSize.y + 5),
+				totalMatches !== 0 ? GetWinRateColor(totalWinrate) : Color.Gray
+			)
 
-			ShowTooltip(rect_total_matches, cursor, "Total matches (up), overall winrate (down)")
+			currentPos = rect.pos1.Add(separatorTotalMatchesOffset)
+			RendererSDK.FilledRect(
+				currentPos,
+				horizontalSeparatorSize,
+				lineColor
+			)
+			currentPos.AddScalarX(horizontalSeparatorSize.x)
+
+			ShowTooltip(
+				rectTotalMatches,
+				cursor,
+				"Total matches (up), overall winrate (down)"
+			)
 		}
 
-		const user_recent_outcomes = ExtractOutcomesInfo(data[0].recent_outcomes)
+		const userRecentOutcomes = ExtractOutcomesInfo(data[0].recent_outcomes)
 		{
-			const rect_last_info = new Rectangle(current_pos, new Vector2(rect.pos1.x + separator_last_info_offset.x, rect.pos2.y))
-
-			const last_streak_str = GetStreakDescription(user_recent_outcomes)
-			const last_streak_size = RendererSDK.GetTextSize(last_streak_str)
-			const last_info_pos = rect_last_info.pos2.Subtract(rect_last_info.Size.DivideScalar(2))
-			RendererSDK.Text(
-				last_streak_str,
-				last_info_pos.Clone().SubtractScalarX(last_streak_size.x / 2).SubtractScalarY(last_streak_size.y),
-				GetStreakColor(user_recent_outcomes),
+			const rectLastInfo = new Rectangle(
+				currentPos,
+				new Vector2(
+					rect.pos1.x + separatorLastInfoOffset.x,
+					rect.pos2.y
+				)
 			)
 
-			const last_winrate_str = `${Math.round(user_recent_outcomes.winrate)}%`
-			const last_winrate_size = RendererSDK.GetTextSize(last_winrate_str)
+			const lastSrteakSrt = GetStreakDescription(userRecentOutcomes)
+			const lastSrteakSize = RendererSDK.GetTextSize(lastSrteakSrt)
+			const lastInfoPos = rectLastInfo.pos2.Subtract(
+				rectLastInfo.Size.DivideScalar(2)
+			)
 			RendererSDK.Text(
-				last_winrate_str,
-				last_info_pos.Clone().SubtractScalarX(last_winrate_size.x / 2).AddScalarY(last_streak_size.y - last_winrate_size.y + 5),
-				user_recent_outcomes.match_count !== 0 ? GetWinRateColor(user_recent_outcomes.winrate) : Color.Gray,
+				lastSrteakSrt,
+				lastInfoPos
+					.Clone()
+					.SubtractScalarX(lastSrteakSize.x / 2)
+					.SubtractScalarY(lastSrteakSize.y),
+				GetStreakColor(userRecentOutcomes)
 			)
 
-			current_pos = rect.pos1.Add(separator_last_info_offset)
-			RendererSDK.FilledRect(current_pos, horizontal_separator_size, line_color)
-			current_pos.AddScalarX(horizontal_separator_size.x)
+			const lastWinrateSrt = `${Math.round(userRecentOutcomes.winrate)}%`
+			const lastWinrateSize = RendererSDK.GetTextSize(lastWinrateSrt)
+			RendererSDK.Text(
+				lastWinrateSrt,
+				lastInfoPos
+					.Clone()
+					.SubtractScalarX(lastWinrateSize.x / 2)
+					.AddScalarY(lastSrteakSize.y - lastWinrateSize.y + 5),
+				userRecentOutcomes.matchCount !== 0
+					? GetWinRateColor(userRecentOutcomes.winrate)
+					: Color.Gray
+			)
 
-			ShowTooltip(rect_last_info, cursor, "Last streak (up), recent winrate (down)\nLast streak starts with either W or L which means it is Winstreak or Losestreak.")
+			currentPos = rect.pos1.Add(separatorLastInfoOffset)
+			RendererSDK.FilledRect(
+				currentPos,
+				horizontalSeparatorSize,
+				lineColor
+			)
+			currentPos.AddScalarX(horizontalSeparatorSize.x)
+
+			ShowTooltip(
+				rectLastInfo,
+				cursor,
+				"Last streak (up), recent winrate (down)\nLast streak starts with either W or L which means it is Winstreak or Losestreak."
+			)
 		}
 
 		{
-			const rect_last_commends = new Rectangle(current_pos, new Vector2(rect.pos1.x + separator_last_commends_offset.x, rect.pos2.y))
+			const rectLastCommends = new Rectangle(
+				currentPos,
+				new Vector2(
+					rect.pos1.x + separatorLastCommendsOffset.x,
+					rect.pos2.y
+				)
+			)
 
-			const last_commends_str = `${data[0].recent_commends?.commends ?? 0}`
-			const last_commends_size = RendererSDK.GetTextSize(last_commends_str, RendererSDK.DefaultFontName, 32)
-			const last_commends_pos = rect_last_commends.pos2
-				.Subtract(rect_last_commends.Size.DivideScalar(2))
-				.AddScalarY(last_commends_size.y / 2)
-				.SubtractScalarX(last_commends_size.x / 2)
+			const lastCommendsSrt = `${data[0].recent_commends?.commends ?? 0}`
+			const lastCommendsSize = RendererSDK.GetTextSize(
+				lastCommendsSrt,
+				RendererSDK.DefaultFontName,
+				32
+			)
+			const lastCommendsPos = rectLastCommends.pos2
+				.Subtract(rectLastCommends.Size.DivideScalar(2))
+				.AddScalarY(lastCommendsSize.y / 2)
+				.SubtractScalarX(lastCommendsSize.x / 2)
 				.AddScalarX(12)
 			RendererSDK.Image(
 				"panorama/images/conduct/commend_star_png.vtex_c",
-				last_commends_pos.Subtract(new Vector2(32, 32)).AddScalarY(5),
+				lastCommendsPos.Subtract(new Vector2(32, 32)).AddScalarY(5),
 				-1,
 				new Vector2(32, 32),
-				Color.Green,
+				Color.Green
 			)
 			RendererSDK.Text(
-				last_commends_str,
-				last_commends_pos.SubtractScalarY(last_commends_size.y),
+				lastCommendsSrt,
+				lastCommendsPos.SubtractScalarY(lastCommendsSize.y),
 				Color.White,
 				RendererSDK.DefaultFontName,
-				32,
+				32
 			)
 
-			current_pos = rect.pos1.Add(separator_last_commends_offset)
-			RendererSDK.FilledRect(current_pos, horizontal_separator_size, line_color)
-			current_pos.AddScalarX(horizontal_separator_size.x)
+			currentPos = rect.pos1.Add(separatorLastCommendsOffset)
+			RendererSDK.FilledRect(
+				currentPos,
+				horizontalSeparatorSize,
+				lineColor
+			)
+			currentPos.AddScalarX(horizontalSeparatorSize.x)
 
-			ShowTooltip(rect_last_commends, cursor, "Recent commends")
+			ShowTooltip(rectLastCommends, cursor, "Recent commends")
 		}
 
-		let loaded_all_heroes = data[1] !== undefined
-		if (loaded_all_heroes)
-			for (const [, hero_data] of data[1])
-				if (hero_data === undefined) {
-					loaded_all_heroes = false
+		let loadedAllHeroes = data[1] !== undefined
+		if (loadedAllHeroes)
+			for (const [, heroData] of data[1])
+				if (heroData === undefined) {
+					loadedAllHeroes = false
 					break
 				}
 		{
-			const rect_most_successful_heroes = new Rectangle(current_pos.Clone(), new Vector2(rect.pos1.x + separator_most_successful_heroes_offset.x, rect.pos2.y))
+			const rectMostSuccessfulHeroes = new Rectangle(
+				currentPos.Clone(),
+				new Vector2(
+					rect.pos1.x + separatorMostSuccessfulHeroesOffset.x,
+					rect.pos2.y
+				)
+			)
 
-			const sorted_heroes = loaded_all_heroes
+			const sortedHeroes = loadedAllHeroes
 				? ArrayExtensions.orderBy(
-					[...data[1].entries()].filter(([, hero_data]) => hero_data!.last_match !== undefined),
-					([, hero_data]) => -GetActualTotalRecord(hero_data!).wins,
-				).slice(0, heroes_per_section)
+						[...data[1].entries()].filter(
+							([, heroData]) => heroData!.last_match !== undefined
+						),
+						([, heroData]) => -GetActualTotalRecord(heroData!).wins
+				  ).slice(0, heroesPerSection)
 				: []
 
-			current_pos = current_pos.AddScalarX(3).AddScalarY(2)
-			for (const [hero_name, hero_data] of sorted_heroes) {
+			currentPos = currentPos.AddScalarX(3).AddScalarY(2)
+			for (const [heroName, heroData] of sortedHeroes) {
 				RendererSDK.Image(
-					`panorama/images/heroes/${hero_name}_png.vtex_c`,
-					current_pos,
+					`panorama/images/heroes/${heroName}_png.vtex_c`,
+					currentPos,
 					-1,
-					hero_image_size,
+					heroImageSize
 				)
-				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data!)
-				current_pos.AddScalarX(hero_image_size.x + 2)
+				RenderHeroStats(
+					new Rectangle(currentPos, currentPos.Add(heroImageSize)),
+					heroData!
+				)
+				currentPos.AddScalarX(heroImageSize.x + 2)
 			}
 
-			current_pos = rect.pos1.Add(separator_most_successful_heroes_offset)
-			RendererSDK.FilledRect(current_pos, horizontal_separator_size, line_color)
-			current_pos.AddScalarX(horizontal_separator_size.x)
+			currentPos = rect.pos1.Add(separatorMostSuccessfulHeroesOffset)
+			RendererSDK.FilledRect(
+				currentPos,
+				horizontalSeparatorSize,
+				lineColor
+			)
+			currentPos.AddScalarX(horizontalSeparatorSize.x)
 
-			ShowTooltip(rect_most_successful_heroes, cursor, "Most successful heroes\nInfo on left side - overall matches count, overall winrate.\nInfo on right side - last matches count (at most 20), last winrate.")
+			ShowTooltip(
+				rectMostSuccessfulHeroes,
+				cursor,
+				"Most successful heroes\nInfo on left side - overall matches count, overall winrate.\nInfo on right side - last matches count (at most 20), last winrate."
+			)
 		}
 
 		{
-			const rect_last_picked_heroes = new Rectangle(current_pos.Clone(), new Vector2(rect.pos1.x + separator_last_picked_heroes_offset.x, rect.pos2.y))
+			const rectLastPickedHeroes = new Rectangle(
+				currentPos.Clone(),
+				new Vector2(
+					rect.pos1.x + separatorLastPickedHeroesOffset.x,
+					rect.pos2.y
+				)
+			)
 
-			const sorted_heroes = loaded_all_heroes
+			const sortedHeroes = loadedAllHeroes
 				? ArrayExtensions.orderBy(
-					[...data[1].entries()].filter(([, hero_data]) => hero_data!.last_match !== undefined),
-					([, hero_data]) => -(hero_data?.last_match?.timestamp ?? 0),
-				).slice(0, heroes_per_section)
+						[...data[1].entries()].filter(
+							([, heroData]) => heroData!.last_match !== undefined
+						),
+						([, heroData]) =>
+							-(heroData?.last_match?.timestamp ?? 0)
+				  ).slice(0, heroesPerSection)
 				: []
 
-			current_pos = current_pos.AddScalarX(3).AddScalarY(2)
-			for (const [hero_name, hero_data] of sorted_heroes) {
+			currentPos = currentPos.AddScalarX(3).AddScalarY(2)
+			for (const [heroName, heroData] of sortedHeroes) {
 				RendererSDK.Image(
-					`panorama/images/heroes/${hero_name}_png.vtex_c`,
-					current_pos,
+					`panorama/images/heroes/${heroName}_png.vtex_c`,
+					currentPos,
 					-1,
-					hero_image_size,
+					heroImageSize
 				)
-				RenderHeroStats(new Rectangle(current_pos, current_pos.Add(hero_image_size)), hero_data!)
-				current_pos.AddScalarX(hero_image_size.x + 3)
+				RenderHeroStats(
+					new Rectangle(currentPos, currentPos.Add(heroImageSize)),
+					heroData!
+				)
+				currentPos.AddScalarX(heroImageSize.x + 3)
 			}
 
-			current_pos = rect.pos1.Add(separator_last_picked_heroes_offset)
-			RendererSDK.FilledRect(current_pos, horizontal_separator_size, line_color)
-			current_pos.AddScalarX(horizontal_separator_size.x)
+			currentPos = rect.pos1.Add(separatorLastPickedHeroesOffset)
+			RendererSDK.FilledRect(
+				currentPos,
+				horizontalSeparatorSize,
+				lineColor
+			)
+			currentPos.AddScalarX(horizontalSeparatorSize.x)
 
-			ShowTooltip(rect_last_picked_heroes, cursor, "Recently picked heroes\nInfo on left side - overall matches count, overall winrate.\nInfo on right side - last matches count (at most 20), last winrate.")
+			ShowTooltip(
+				rectLastPickedHeroes,
+				cursor,
+				"Recently picked heroes\nInfo on left side - overall matches count, overall winrate.\nInfo on right side - last matches count (at most 20), last winrate."
+			)
 		}
 	}
 })
 
 InputEventSDK.on("MouseKeyDown", mask => {
-	if (!state.value || !panel_shown || current_players_cache.size === 0)
+	if (!state.value || !panelShown || currentPlayersCache.size === 0)
 		return true
 
 	const cursor = Input.CursorOnScreen
-	const gui_base_data = GetGUIBaseData()
-	if (!gui_base_data.rect.Contains(cursor))
-		return true
+	const guiBaseData = GetGUIBaseData()
+	if (!guiBaseData.rect.Contains(cursor)) return true
 
 	if (mask === VMouseKeys.MK_LBUTTON) {
-		if (GetGUICloseButton(gui_base_data).Contains(cursor)) {
-			panel_shown = false
+		if (GetGUICloseButton(guiBaseData).Contains(cursor)) {
+			panelShown = false
 			return false
 		}
-		if (send_ping) {
-			if (GetGUIAcceptButton(gui_base_data).Contains(cursor)) {
+		if (sendPing) {
+			if (GetGUIAcceptButton(guiBaseData).Contains(cursor)) {
 				AcceptGame()
 				return false
 			}
-			// if (GetGUIDeclineButton(gui_base_data).Contains(cursor)) {
+			// if (GetGUIDeclineButton(guiBaseData).Contains(cursor)) {
 			// 	DeclineGame()
 			// 	return false
 			// }
