@@ -49,7 +49,7 @@ interface PlayerData {
 }
 
 const current_players_cache = new Map<bigint, [Nullable<UserData>, Map<string, Nullable<HeroData>>]>()
- function requestPlayerDataIfEnabled(steamid64: bigint): Promise<void> {
+function requestPlayerDataIfEnabled(steamid64: bigint): void {
 	if (!state.value)
 		return
 	let ar = current_players_cache.get(steamid64)
@@ -58,7 +58,7 @@ const current_players_cache = new Map<bigint, [Nullable<UserData>, Map<string, N
 		current_players_cache.set(steamid64, ar)
 	} else if (ar[1].size !== 0)
 		return
-	const unit_storage =  UnitData.global_storage,
+	const unit_storage = UnitData.global_storage,
 		player_id = Number(steamid64 - 76561197960265728n)
 	for (const [unit_name, unit_data] of unit_storage) {
 		if (unit_data.HeroID === 0)
@@ -266,7 +266,7 @@ function ExtractOutcomesInfo(data: OutcomesData): OutcomesInfo {
 		wins = 0,
 		losses = 0
 	for (let i = 0; i < match_count; i++) {
-		const win = (data.outcomes & BitsExtensions.masksNumber[i]) !== 0
+		const win = BitsExtensions.HasBit(data.outcomes, i)
 		if (win && losses === 0)
 			winstreak++
 		if (!win && wins === 0)
@@ -523,7 +523,7 @@ const party_colors: Color[] = [
 	new Color(214, 132, 17),
 ]
 const party_line_size = new Vector2(3, 1)
-EventsSDK.on("Draw",  () => {
+EventsSDK.on("Draw", () => {
 	if (send_ping && accept_deadline < hrtime()) {
 		// if (dodge_games_by_default.value)
 		// 	DeclineGame()
@@ -696,7 +696,7 @@ EventsSDK.on("Draw",  () => {
 			RendererSDK.Text(
 				total_winrate_str,
 				total_matches_pos.Clone().SubtractScalarX(total_winrate_size.x / 2).AddScalarY(total_matches_size.y - total_winrate_size.y + 5),
-				GetWinRateColor(total_winrate),
+				total_matches !== 0 ? GetWinRateColor(total_winrate) : Color.Gray,
 			)
 
 			current_pos = rect.pos1.Add(separator_total_matches_offset)
@@ -724,7 +724,7 @@ EventsSDK.on("Draw",  () => {
 			RendererSDK.Text(
 				last_winrate_str,
 				last_info_pos.Clone().SubtractScalarX(last_winrate_size.x / 2).AddScalarY(last_streak_size.y - last_winrate_size.y + 5),
-				GetWinRateColor(user_recent_outcomes.winrate),
+				user_recent_outcomes.match_count !== 0 ? GetWinRateColor(user_recent_outcomes.winrate) : Color.Gray,
 			)
 
 			current_pos = rect.pos1.Add(separator_last_info_offset)
