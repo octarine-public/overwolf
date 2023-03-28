@@ -32,7 +32,9 @@ function requestPlayerDataIfEnabled(steamid64: bigint): void {
 		ar = [undefined, new Map()]
 		currentPlayersCache.set(steamid64, ar)
 	} else if (ar[1].size !== 0) return
+
 	const playerID = Number(steamid64 - 76561197960265728n)
+
 	for (const [unitName, unitData] of UnitData.globalStorage) {
 		if (unitData.HeroID === 0) continue
 		ar[1].set(unitName, undefined)
@@ -95,6 +97,7 @@ EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 	// 	last_party = reason !== 2 ? party : undefined
 	// }
 	if (id !== SOType.Lobby) return
+
 	if (reason === 2) {
 		currentLobby = undefined
 		currentPlayersCache.clear()
@@ -119,10 +122,14 @@ EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 	panelShown = true
 	acceptDeadline = hrtime() + 5000
 	currentLobby = obj
+
+	console.log("Loading...")
+	
 	for (const member of currentLobbyMembers) {
 		currentNames.push(TransformName(member.get("name") as string))
 		requestPlayerDataIfEnabled(member.get("id") as bigint)
 	}
+
 })
 
 Events.on("GCPingResponse", () => {
@@ -182,6 +189,7 @@ const separatorMostSuccessfulHeroesOffset = separatorLastCommendsOffset.Add(
 const separatorLastPickedHeroesOffset = separatorMostSuccessfulHeroesOffset.Add(
 	new Vector2((heroImageSize.x + 2) * heroesPerSection + 7, 0)
 )
+
 function GetGUIBaseData(): GUIBaseData {
 	const windowSize = RendererSDK.WindowSize
 	const size = new Vector2(
