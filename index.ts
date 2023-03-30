@@ -108,28 +108,30 @@ EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 		currentRoles = []
 		needsAccept = false
 	}
+
 	if (reason !== 0) return
+
 	currentLobbyMembers = (obj.get("all_members") as RecursiveMap[]).filter(
 		member =>
 			member.has("id") &&
 			(member.get("team") === 0 || member.get("team") === 1)
 	)
+
 	if (currentLobbyMembers.length > 10) return
+
 	currentRoles = currentLobbyMembers.map(
 		member => member.get("lane_selection_flags") as LaneSelectionFlags
 	)
+
 	needsAccept = true
 	panelShown = true
 	acceptDeadline = hrtime() + 5000
 	currentLobby = obj
-
-	console.log("Loading...")
-	
+	// console.log("Loading...")
 	for (const member of currentLobbyMembers) {
 		currentNames.push(TransformName(member.get("name") as string))
 		requestPlayerDataIfEnabled(member.get("id") as bigint)
 	}
-
 })
 
 Events.on("GCPingResponse", () => {
