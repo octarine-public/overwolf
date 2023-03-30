@@ -23,7 +23,8 @@
 	"exclude": [
 		"../../octarine-web/*",
 		"node_modules/**/*",
-		"scripts_files/**/*"
+		"scripts_files/**/*",
+		"../../../v8/*"
 	],
 	"compileOnSave": true
 }

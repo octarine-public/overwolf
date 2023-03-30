@@ -127,7 +127,9 @@ EventsSDK.on("SharedObjectChanged", (id, reason, obj) => {
 	panelShown = true
 	acceptDeadline = hrtime() + 5000
 	currentLobby = obj
-	// console.log("Loading...")
+	
+	console.log("Loading overwolf data...") // idk ths console (fix load heroes)
+
 	for (const member of currentLobbyMembers) {
 		currentNames.push(TransformName(member.get("name") as string))
 		requestPlayerDataIfEnabled(member.get("id") as bigint)
