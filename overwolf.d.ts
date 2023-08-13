@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/naming-convention */
 
 interface MatchData {
 	assists: number
@@ -27,7 +28,7 @@ interface UserData {
 	prediction_streak: Nullable<number>
 	recent_commends: Nullable<{
 		commends: number
-		match_count: number,
+		match_count: number
 	}>
 	recent_mvps: OutcomesData
 	recent_outcomes: OutcomesData
