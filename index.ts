@@ -14,6 +14,7 @@ import {
 	Menu,
 	Rectangle,
 	RendererSDK,
+	Sleeper,
 	SOType,
 	UnitData,
 	Vector2,
@@ -25,7 +26,7 @@ const currentPlayersCache = new Map<
 	[Nullable<UserData>, Map<string, Nullable<HeroData>>]
 >()
 const activePromises: Promise<void>[] = []
-
+const sleeperReloadData = new Sleeper()
 function IsVlaidNameStorage(name: string, unitData: UnitData) {
 	return (
 		unitData.HeroID !== 0 
@@ -215,10 +216,11 @@ const separatorLastPickedHeroesOffset = separatorMostSuccessfulHeroesOffset.Add(
 )
 
 function RealodGUIData() {
-	if (currentLobby !== undefined && selfAccountID !== undefined) {
+	if (currentLobby !== undefined && selfAccountID !== undefined && !sleeperReloadData.Sleeping("ReloadData")) {
 		currentPlayersCache.clear()
 		requestPlayerDataIfEnabled(selfAccountID)
 		console.log("Reload overwolf data...")
+		sleeperReloadData.Sleep(2000, "ReloadData")
 	}
 }
 
@@ -709,7 +711,7 @@ EventsSDK.on("Draw", () => {
 			guiReloadButton.pos1,
 			-1,
 			guiReloadButton.Size,
-			closeIconButtonColor
+			sleeperReloadData.Sleeping("ReloadData") ? closeIconButtonColor.Clone().SetA(100) : closeIconButtonColor
 		)
 	}
 
