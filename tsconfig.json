@@ -18,13 +18,11 @@
 	},
 	"include": [
 		"./**/*.ts",
-		"../../../**/*.d.ts"
+		"../../**/*.d.ts"
 	],
 	"exclude": [
-		"../../octarine-web/*",
 		"node_modules/**/*",
 		"scripts_files/**/*",
-		"../../../v8/*"
 	],
 	"compileOnSave": true
 }

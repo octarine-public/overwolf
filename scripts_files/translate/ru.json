@@ -2,5 +2,8 @@
 	"Key": "Клавиша",
 	"State": "Состояние",
 	"Overwolf": "Овервульф",
-	"Dodge Games By Default": "Доджить игры по умолчанию"
+	"Dodge Games By Default": "Доджить игры по умолчанию",
+	"Show/Hide menu": "Показать/Скрыть меню",
+	"Reload players stats": "Обновить статистику игроков",
+	"Reload stats": "Обновить статистику"
 }

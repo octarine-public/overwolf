@@ -25,6 +25,20 @@ const currentPlayersCache = new Map<
 	[Nullable<UserData>, Map<string, Nullable<HeroData>>]
 >()
 const activePromises: Promise<void>[] = []
+
+function IsVlaidNameStorage(name: string, unitData: UnitData) {
+	return (
+		unitData.HeroID !== 0 
+		&& name !== "npc_dota_hero_base" 
+		&& name !== "npc_dota_hero_target_dummy" // ID 127
+		&& name.startsWith("npc_dota_hero_")
+	)
+}
+
+function StorageNames() {
+	return [...UnitData.globalStorage.entries()].filter(([name, data]) => IsVlaidNameStorage(name, data))
+}
+
 function requestPlayerDataIfEnabled(steamid64: bigint): void {
 	if (!state.value) return
 	let ar = currentPlayersCache.get(steamid64)
@@ -35,8 +49,7 @@ function requestPlayerDataIfEnabled(steamid64: bigint): void {
 
 	const playerID = Number(steamid64 - 76561197960265728n)
 
-	for (const [unitName, unitData] of UnitData.globalStorage) {
-		if (unitData.HeroID === 0) continue
+	for (const [unitName, unitData] of StorageNames()) {
 		ar[1].set(unitName, undefined)
 		const prom = requestPlayerData(playerID, unitData.HeroID).then(json => {
 			const data = JSON.parse(json) as PlayerData
@@ -58,12 +71,18 @@ const RootNode = Menu.AddEntry(
 	"Overwolf",
 	"github.com/octarine-public/wrapper/scripts_files/menu/icons/info.svg"
 )
-const bind = RootNode.AddKeybind("Key", "Tilde")
+RootNode.SortNodes = false
+
+const state = RootNode.AddToggle("State", true)
+const bind = RootNode.AddKeybind("Key", "Tilde", "Show/Hide menu")
+const reload = RootNode.AddKeybind("Reload stats", "", "Reload players stats")
+
+reload.OnRelease(() => RealodGUIData())
 bind.OnPressed(() => {
 	if (currentPlayersCache.size !== 0) panelShown = !panelShown
 })
 bind.ActivatesInMenu = true
-const state = RootNode.AddToggle("State", true)
+
 // const dodge_games_by_default = RootNode.AddToggle("Dodge Games By Default", false)
 let needsAccept = false
 let acceptDeadline = 0
@@ -144,6 +163,7 @@ Events.on("GCPingResponse", () => {
 	return true
 })
 
+
 interface GUIBaseData {
 	rect: Rectangle
 	contentRect: Rectangle
@@ -194,6 +214,14 @@ const separatorLastPickedHeroesOffset = separatorMostSuccessfulHeroesOffset.Add(
 	new Vector2((heroImageSize.x + 2) * heroesPerSection + 7, 0)
 )
 
+function RealodGUIData() {
+	if (currentLobby !== undefined && selfAccountID !== undefined) {
+		currentPlayersCache.clear()
+		requestPlayerDataIfEnabled(selfAccountID)
+		console.log("Reload overwolf data...")
+	}
+}
+
 function GetGUIBaseData(): GUIBaseData {
 	const windowSize = RendererSDK.WindowSize
 	const size = new Vector2(
@@ -230,6 +258,14 @@ function GetGUICloseButton(baseData: GUIBaseData): Rectangle {
 	)
 	return new Rectangle(pos, pos.Add(closeButtonSize))
 }
+function GetGUIReloadButton(baseData: GUIBaseData) {
+	const pos = new Vector2(
+		baseData.contentRect.pos2.x - closeButtonSize.x * 2.25,
+		baseData.contentRect.pos1.y
+	)
+	return new Rectangle(pos, pos.Add(closeButtonSize))
+}
+
 const acceptButtonColor = Color.Green
 function GetGUIAcceptButton(baseData: GUIBaseData): Rectangle {
 	const acceptTextSize = Vector2.FromVector3(
@@ -652,11 +688,27 @@ EventsSDK.on("Draw", () => {
 			guiCloseButton.Size,
 			closeButtonColor
 		)
+
 		RendererSDK.Image(
 			"panorama/images/control_icons/x_close_png.vtex_c",
 			guiCloseButton.pos1,
 			-1,
 			guiCloseButton.Size,
+			closeIconButtonColor
+		)
+
+		const guiReloadButton = GetGUIReloadButton(guiBaseData)
+		RendererSDK.FilledRect(
+			guiReloadButton.pos1,
+			guiReloadButton.Size,
+			Color.Black.SetA(180)
+		)
+
+		RendererSDK.Image(
+			"panorama/images/hud/reborn/icon_courier_inuse_psd.vtex_c",
+			guiReloadButton.pos1,
+			-1,
+			guiReloadButton.Size,
 			closeIconButtonColor
 		)
 	}
@@ -1088,6 +1140,10 @@ InputEventSDK.on("MouseKeyDown", mask => {
 	if (mask === VMouseKeys.MK_LBUTTON) {
 		if (GetGUICloseButton(guiBaseData).Contains(cursor)) {
 			panelShown = false
+			return false
+		}
+		if (GetGUIReloadButton(guiBaseData).Contains(cursor)) {
+			RealodGUIData()
 			return false
 		}
 		if (sendPing) {

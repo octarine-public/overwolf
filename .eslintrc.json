@@ -16,9 +16,7 @@
 	},
 	"plugins": [
 		"eslint-plugin-import",
-		"eslint-plugin-jsdoc",
 		"eslint-plugin-unicorn",
-		"eslint-plugin-import",
 		"eslint-plugin-simple-import-sort",
 		"@typescript-eslint",
 		"unused-imports",
@@ -338,9 +336,6 @@
 		"import/no-extraneous-dependencies": "off",
 		"import/no-internal-modules": "off",
 		"indent": "off",
-		"jsdoc/check-alignment": "error",
-		"jsdoc/check-indentation": "error",
-		"jsdoc/newline-after-description": "error",
 		"max-classes-per-file": "off",
 		"max-len": "off",
 		"new-parens": "error",
@@ -375,7 +370,7 @@
 		"no-unused-labels": "error",
 		"no-lonely-if": "error",
 		"no-use-before-define": "off",
-		"no-var": "off",
+		"no-var": "error",
 		"object-shorthand": "error",
 		"one-var": [
 			"off",
