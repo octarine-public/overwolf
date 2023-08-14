@@ -211,7 +211,7 @@ function RealodGUIData() {
 		currentPlayersCache.clear()
 		requestPlayerDataIfEnabled(selfAccountID)
 		console.log("Reload overwolf data...")
-		dataSleeper.Sleep(2000, "ReloadData")
+		dataSleeper.Sleep(1000, "ReloadData")
 	}
 }
 
