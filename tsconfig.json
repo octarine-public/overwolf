@@ -9,13 +9,12 @@
 		"noEmit": true,
 		"noUnusedLocals": true,
 		"strict": true,
-		"outDir": "scripts",
 		"alwaysStrict": true,
 		"experimentalDecorators": true,
+		"forceConsistentCasingInFileNames": true,
 		"lib": [
 			"ESNext"
 		],
-		"forceConsistentCasingInFileNames": true
 	},
 	"include": [
 		"./**/*.ts",
